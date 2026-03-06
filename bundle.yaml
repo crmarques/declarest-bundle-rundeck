@@ -1,0 +1,39 @@
+apiVersion: declarest.io/v1alpha1
+kind: MetadataBundle
+
+name: rundeck-bundle
+version: 0.0.1
+description: Metadata bundle for Rundeck Project and Job APIs.
+home: https://github.com/crmarques/declarest-bundle-rundeck
+sources:
+  - https://github.com/crmarques/declarest-bundle-rundeck
+  - https://docs.rundeck.com/docs/api/
+keywords:
+  - declarest
+  - rundeck
+  - metadata
+license: Apache-2.0
+deprecated: false
+
+maintainers:
+  - name: Carlos Marques
+    url: https://github.com/crmarques
+
+declarest:
+  shorthand: rundeck-bundle
+  metadataRoot: metadata
+  openapi: openapi.yml
+  metadataFileName: metadata.json
+  resourceFormat: json
+  compatibleDeclarest: ">=0.1.0"
+  compatibleManagedServer:
+    product: rundeck
+    versions: ">=5.0.0 <6.0.0"
+
+distribution:
+  repo: crmarques/declarest-bundle-rundeck
+  tagTemplate: "v{version}"
+  artifactTemplate: "rundeck-bundle-{version}.tar.gz"
+
+annotations:
+  org.opencontainers.image.source: https://github.com/crmarques/declarest-bundle-rundeck
