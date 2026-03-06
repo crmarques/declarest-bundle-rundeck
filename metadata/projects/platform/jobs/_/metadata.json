@@ -5,6 +5,13 @@
     "collectionPath": "/projects/{{.project}}/jobs"
   },
   "operationInfo": {
+    "getResource": {
+      "path": "/job/{{.id}}",
+      "payload": {
+        "filterAttributes": null,
+        "jqExpression": "(if type == \"array\" then (.[0] // {}) else . end) | {id: (.uuid // .id // \"{{.id}}\"), name: (.name // \"{{.id}}\"), project: \"{{.project}}\", description: (.description // \"\"), sequence: (.sequence // {keepgoing: false, strategy: \"node-first\", commands: [{exec: (\"echo \" + (.name // \"{{.id}}\"))}]})}"
+      }
+    },
     "createResource": {
       "httpMethod": "POST",
       "path": "/project/{{.project}}/jobs/import",
@@ -13,13 +20,8 @@
         "uuidOption": "preserve"
       },
       "payload": {
+        "filterAttributes": null,
         "jqExpression": "[(if type == \"array\" then (.[0] // {}) else . end) | ({name: (.name // \"{{.id}}\"), description: (.description // \"\"), sequence: (.sequence // {keepgoing: false, strategy: \"node-first\", commands: [{exec: (\"echo \" + (.name // \"{{.id}}\"))}]})} + (if (.id // \"\") != \"\" then {uuid: .id} else {} end))]"
-      }
-    },
-    "getResource": {
-      "path": "/job/{{.id}}",
-      "payload": {
-        "jqExpression": "(if type == \"array\" then (.[0] // {}) else . end) | {id: (.uuid // .id // \"{{.id}}\"), name: (.name // \"{{.id}}\"), project: \"{{.project}}\", description: (.description // \"\"), sequence: (.sequence // {keepgoing: false, strategy: \"node-first\", commands: [{exec: (\"echo \" + (.name // \"{{.id}}\"))}]})}"
       }
     },
     "updateResource": {
@@ -30,6 +32,7 @@
         "uuidOption": "preserve"
       },
       "payload": {
+        "filterAttributes": null,
         "jqExpression": "[(if type == \"array\" then (.[0] // {}) else . end) | ({name: (.name // \"{{.id}}\"), description: (.description // \"\"), sequence: (.sequence // {keepgoing: false, strategy: \"node-first\", commands: [{exec: (\"echo \" + (.name // \"{{.id}}\"))}]})} + (if (.id // \"\") != \"\" then {uuid: .id} else {} end))]"
       }
     },
@@ -39,6 +42,7 @@
     "listCollection": {
       "path": "/project/{{.project}}/jobs",
       "payload": {
+        "filterAttributes": null,
         "jqExpression": "map({id: (.id // .uuid // .name), name: (.name // (.id // \"\")), project: (.project // \"{{.project}}\"), description: (.description // \"\")})"
       }
     },
