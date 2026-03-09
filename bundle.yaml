@@ -2,7 +2,8 @@ apiVersion: declarest.io/v1alpha1
 kind: MetadataBundle
 
 name: rundeck-bundle
-version: 0.0.1
+# Placeholder only. The release workflow stamps the real version into the published bundle.yaml.
+version: 0.0.0
 description: Metadata bundle for Rundeck Project and Job APIs.
 home: https://github.com/crmarques/declarest-bundle-rundeck
 sources:
@@ -23,8 +24,7 @@ declarest:
   shorthand: rundeck-bundle
   metadataRoot: metadata
   openapi: openapi.yml
-  metadataFileName: metadata.json
-  resourceFormat: json
+  metadataFileName: metadata.yaml
   compatibleDeclarest: ">=0.1.0"
   compatibleManagedServer:
     product: rundeck

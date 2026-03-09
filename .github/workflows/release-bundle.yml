@@ -1,0 +1,241 @@
+name: Release Bundle
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Bundle version to stamp into bundle.yaml for a manual run
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-bundle-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PyYAML
+        run: pip install --disable-pip-version-check pyyaml
+
+      - name: Resolve release version
+        id: release-version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+
+          input_version = os.getenv("INPUT_VERSION", "").strip()
+          ref_name = os.getenv("REF_NAME", "").strip()
+
+          version = input_version
+          if not version and ref_name.startswith("v"):
+              version = ref_name[1:]
+
+          if not version:
+              raise SystemExit("release version is required")
+          if version.startswith("v"):
+              raise SystemExit("version input must not start with 'v'")
+          if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?", version):
+              raise SystemExit(f"release version {version!r} must be semver-like")
+          if ref_name.startswith("v") and ref_name != f"v{version}":
+              raise SystemExit(
+                  f"tag/version mismatch: ref={ref_name!r} expected tag {f'v{version}'!r}"
+              )
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"version={version}\n")
+              fh.write(f"tag=v{version}\n")
+          PY
+
+      - name: Render release bundle manifest
+        id: render-manifest
+        env:
+          RELEASE_VERSION: ${{ steps.release-version.outputs.version }}
+        run: |
+          python - <<'PY'
+          import os
+          import pathlib
+          import yaml
+
+          release_version = os.environ["RELEASE_VERSION"]
+          manifest_path = pathlib.Path("bundle.yaml")
+          manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+          manifest["version"] = release_version
+
+          release_dir = pathlib.Path(".release")
+          release_dir.mkdir(exist_ok=True)
+          rendered_manifest = release_dir / "bundle.yaml"
+          rendered_manifest.write_text(
+              yaml.safe_dump(manifest, sort_keys=False),
+              encoding="utf-8",
+          )
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"bundle_path={rendered_manifest.as_posix()}\n")
+          PY
+
+      - name: Validate bundle manifest and release contract
+        env:
+          BUNDLE_PATH: ${{ steps.render-manifest.outputs.bundle_path }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os
+          import pathlib
+          import urllib.parse
+          import yaml
+
+          ref_name = os.getenv("REF_NAME", "")
+          root = pathlib.Path(".").resolve()
+          bundle_path_value = os.getenv("BUNDLE_PATH", "bundle.yaml")
+          bundle_path = (root / bundle_path_value).resolve()
+          if not bundle_path.exists():
+              raise SystemExit(f"{bundle_path_value} not found")
+
+          manifest = yaml.safe_load(bundle_path.read_text(encoding="utf-8")) or {}
+          name = str(manifest.get("name", "")).strip()
+          version = str(manifest.get("version", "")).strip()
+          if not name:
+              raise SystemExit("bundle.yaml name is required")
+          if not version:
+              raise SystemExit("bundle.yaml version is required")
+
+          expected_tag = f"v{version}"
+          if ref_name.startswith("v") and ref_name != expected_tag:
+              raise SystemExit(
+                  f"tag/version mismatch: ref={ref_name!r} bundle.version={version!r} expected tag {expected_tag!r}"
+              )
+
+          distribution = manifest.get("distribution") or {}
+          artifact_template = str(distribution.get("artifactTemplate", "")).strip()
+          expected_template = f"{name}-{{version}}.tar.gz"
+          if artifact_template != expected_template:
+              raise SystemExit(
+                  "artifact template mismatch: "
+                  f"got {artifact_template!r}, expected {expected_template!r}"
+              )
+
+          declarest = manifest.get("declarest") or {}
+          metadata_root = str(declarest.get("metadataRoot", "")).strip()
+          if not metadata_root:
+              raise SystemExit("declarest.metadataRoot is required")
+
+          metadata_file_name = str(declarest.get("metadataFileName", "")).strip() or "metadata.json"
+          metadata_dir = (root / metadata_root).resolve()
+          if not metadata_dir.is_dir():
+              raise SystemExit(f"metadata root {metadata_root!r} does not exist or is not a directory")
+          try:
+              metadata_dir.relative_to(root)
+          except ValueError:
+              raise SystemExit("declarest.metadataRoot must stay within repository root")
+
+          found_metadata_file = any(
+              path.name == metadata_file_name
+              for path in metadata_dir.rglob("*")
+              if path.is_file()
+          )
+          if not found_metadata_file:
+              raise SystemExit(
+                  f"metadata root {metadata_root!r} does not contain {metadata_file_name!r}"
+              )
+
+          openapi_ref = str(declarest.get("openapi", "")).strip()
+          if not openapi_ref:
+              raise SystemExit("declarest.openapi is required and must reference a bundled file")
+
+          parsed_openapi = urllib.parse.urlparse(openapi_ref)
+          if parsed_openapi.scheme:
+              raise SystemExit("declarest.openapi must be a relative file path inside the repository")
+
+          openapi_path = (root / openapi_ref).resolve()
+          try:
+              openapi_path.relative_to(root)
+          except ValueError:
+              raise SystemExit("declarest.openapi must stay within repository root")
+          if not openapi_path.is_file():
+              raise SystemExit(
+                  f"declarest.openapi file {openapi_ref!r} does not exist or is not a file"
+              )
+          PY
+
+      - name: Build bundle archive
+        id: build-archive
+        env:
+          BUNDLE_PATH: ${{ steps.render-manifest.outputs.bundle_path }}
+        run: |
+          readarray -t MANIFEST_VALUES < <(python - <<'PY'
+          import os
+          import pathlib
+          import urllib.parse
+          import yaml
+
+          bundle_path = pathlib.Path(os.environ["BUNDLE_PATH"])
+          with bundle_path.open("r", encoding="utf-8") as fh:
+              manifest = yaml.safe_load(fh) or {}
+
+          name = str(manifest.get("name", "")).strip()
+          version = str(manifest.get("version", "")).strip()
+          declarest = manifest.get("declarest") or {}
+          metadata_root = str(declarest.get("metadataRoot", "")).strip()
+          openapi_ref = str(declarest.get("openapi", "")).strip()
+
+          if urllib.parse.urlparse(openapi_ref).scheme:
+              openapi_ref = ""
+
+          print(name)
+          print(version)
+          print(metadata_root)
+          print(openapi_ref)
+          PY
+          )
+          NAME="${MANIFEST_VALUES[0]}"
+          VERSION="${MANIFEST_VALUES[1]}"
+          METADATA_ROOT="${MANIFEST_VALUES[2]}"
+          OPENAPI_PATH="${MANIFEST_VALUES[3]}"
+          if [ -z "$VERSION" ] || [ -z "$NAME" ] || [ -z "$METADATA_ROOT" ] || [ -z "$OPENAPI_PATH" ]; then
+            echo "bundle.yaml name/version/declarest.metadataRoot/declarest.openapi missing"
+            exit 1
+          fi
+          ARCHIVE="${NAME}-${VERSION}.tar.gz"
+          PACKAGE_ROOT=".release/package"
+          rm -rf "$PACKAGE_ROOT"
+          mkdir -p "$PACKAGE_ROOT"
+          cp "$BUNDLE_PATH" "$PACKAGE_ROOT/bundle.yaml"
+          mkdir -p "$PACKAGE_ROOT/$(dirname "$METADATA_ROOT")"
+          cp -R "$METADATA_ROOT" "$PACKAGE_ROOT/$METADATA_ROOT"
+          mkdir -p "$PACKAGE_ROOT/$(dirname "$OPENAPI_PATH")"
+          cp "$OPENAPI_PATH" "$PACKAGE_ROOT/$OPENAPI_PATH"
+          tar -czf "$ARCHIVE" -C "$PACKAGE_ROOT" bundle.yaml "$METADATA_ROOT" "$OPENAPI_PATH"
+          echo "archive=$ARCHIVE" >> "$GITHUB_OUTPUT"
+
+      - name: Publish release asset
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.build-archive.outputs.archive }}
+
+      - name: Upload workflow artifact (manual runs)
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-archive
+          path: ${{ steps.build-archive.outputs.archive }}
