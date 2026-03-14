@@ -4,7 +4,7 @@ kind: MetadataBundle
 name: rundeck-bundle
 # Placeholder only. The release workflow stamps the real version into the published bundle.yaml.
 version: 0.0.0
-description: Metadata bundle for Rundeck Project and Job APIs.
+description: Metadata bundle for Rundeck project, job, node, and key storage APIs.
 home: https://github.com/crmarques/declarest-bundle-rundeck
 sources:
   - https://github.com/crmarques/declarest-bundle-rundeck

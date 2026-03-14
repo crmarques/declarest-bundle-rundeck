@@ -1,6 +1,6 @@
 # declarest-bundle-rundeck
 
-Rundeck metadata bundle for DeclaREST.
+Rundeck metadata bundle for DeclaREST, including descendant-aware key storage mappings.
 
 ## Bundle manifest
 
@@ -18,7 +18,14 @@ This baseline bundle ships metadata for:
 - `/projects/_` (Rundeck Project APIs)
 - `/projects/_/jobs/_` (Rundeck Job APIs)
 - `/projects/_/nodes/_` (Rundeck resource model source APIs)
-- `/projects/_/secrets/_` (Rundeck key storage APIs)
+- `/projects/_/secrets/_` (Rundeck key storage APIs, including nested descendant paths)
+- `/projects/_/infra-secrets/_` (Rundeck infrastructure key storage APIs)
+
+## Feature highlights
+
+- `selector.descendants` plus `{% raw %}{{/descendantCollectionPath}}{% endraw %}` model nested key storage folders under `/projects/_/secrets/_`.
+- Relative operation paths keep the key storage metadata concise by resolving against the effective remote collection path.
+- `resource.externalizedAttributes` in the jobs scope stores command scripts in deterministic sidecar files.
 
 ## Release contract
 
